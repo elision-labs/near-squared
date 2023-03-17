@@ -1,72 +1,102 @@
-/*
- * Example smart contract written in RUST
- *
- * Learn more about writing NEAR smart contracts with Rust:
- * https://near-docs.io/develop/Contract
- *
- */
-
+use near_sdk::{env, near_bindgen, Promise};
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
-use near_sdk::{log, near_bindgen};
+use near_sdk::serde::{Deserialize, Serialize};
 
-// Define the default message
-const DEFAULT_MESSAGE: &str = "Hello";
+#[global_allocator]
+static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
-// Define the contract structure
+const NEAR_TOKEN_DECIMALS: u128 = 24;
+const BASE_PRICE: u128 = 100; // 1 NEAR = 100 USD
+const LIQUIDATION_THRESHOLD: u128 = 0.6; // When user's margin ratio falls below this threshold, their position is liquidated
+
+#[derive(Default, BorshDeserialize, BorshSerialize)]
+pub struct Position {
+    pub margin: u128,
+    pub size: i128,
+    pub entry_price: u128,
+    pub stop_loss_price: Option<u128>,
+}
+
+#[derive(Default, BorshDeserialize, BorshSerialize)]
+pub struct NearSquared {
+    pub index_price: u128,
+    pub long_positions: Vec<Position>,
+    pub short_positions: Vec<Position>,
+    pub total_margin: u128,
+}
+
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize)]
 pub struct Contract {
-    message: String,
+    pub near_squared: NearSquared,
 }
 
-// Define the default, which automatically initializes the contract
-impl Default for Contract{
-    fn default() -> Self{
-        Self{message: DEFAULT_MESSAGE.to_string()}
-    }
-}
-
-// Implement the contract structure
 #[near_bindgen]
 impl Contract {
-    // Public method - returns the greeting saved, defaulting to DEFAULT_MESSAGE
-    pub fn get_greeting(&self) -> String {
-        return self.message.clone();
+    pub fn long(&mut self, margin: u128) {
+        let index_price = self.squeeth.index_price;
+        let size = margin / BASE_PRICE;
+        let entry_price = index_price;
+        let position = Position {
+            margin,
+            size,
+            entry_price,
+            stop_loss_price: None,
+        };
+        self.squeeth.long_positions.push(position);
+        self.squeeth.total_margin += margin;
     }
 
-    // Public method - accepts a greeting, such as "howdy", and records it
-    pub fn set_greeting(&mut self, message: String) {
-        // Use env::log to record logs permanently to the blockchain!
-        log!("Saving greeting {}", message);
-        self.message = message;
+    pub fn short(&mut self, margin: u128) {
+        let index_price = self.squeeth.index_price;
+        let size = margin / BASE_PRICE;
+        let entry_price = index_price;
+        let position = Position {
+            margin,
+            size: -size,
+            entry_price,
+            stop_loss_price: None,
+        };
+        self.squeeth.short_positions.push(position);
+        self.squeeth.total_margin += margin;
     }
-}
 
-/*
- * The rest of this file holds the inline tests for the code above
- * Learn more about Rust tests: https://doc.rust-lang.org/book/ch11-01-writing-tests.html
- */
+    pub fn close_position(&mut self, index: usize) {
+        let position = self.get_position(index);
+        let size = position.size;
+        let entry_price = position.entry_price;
+        let exit_price = self.squeeth.index_price;
+        let pnl = if size > 0 {
+            (exit_price - entry_price) * size as u128
+        } else {
+            (entry_price - exit_price) * size.abs() as u128
+        };
+        let margin = position.margin;
+        let net_margin = margin + pnl;
+        self.squeeth.total_margin -= margin;
+        if size > 0 {
+            self.squeeth.long_positions.remove(index);
+        } else {
+            self.squeeth.short_positions.remove(index);
+        }
+    }
+
+    pub fn liquidate_position(&mut self, index: usize) {
+        let position = self.get_position(index);
+        let size = position.size;
+        let entry_price = position.entry_price;
+        let exit_price = self.squeeth.index_price;
+        let pnl = if size > 0 {
+            (exit_price - entry_price) * size as u128
+        } else {
+            (entry_price - exit_price) * size.ab
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn get_default_greeting() {
-        let contract = Contract::default();
-        // this test did not call set_greeting so should return the default "Hello" greeting
-        assert_eq!(
-            contract.get_greeting(),
-            "Hello".to_string()
-        );
-    }
-
-    #[test]
-    fn set_then_get_greeting() {
-        let mut contract = Contract::default();
-        contract.set_greeting("howdy".to_string());
-        assert_eq!(
-            contract.get_greeting(),
-            "howdy".to_string()
-        );
+    fn get_long_position() {
+        todo!();
     }
 }
